@@ -11,6 +11,8 @@ __all__ = (
     "unregister",
 )
 
+import textwrap
+
 import bpy  # pylint: disable=import-error
 from bpy.props import (
     BoolProperty,
@@ -19,7 +21,7 @@ from bpy.props import (
     StringProperty,
 )  # pylint: disable=import-error
 
-from . import mcp_to_blender_server
+from . import mcp_to_blender_server, project_settings
 
 _PORT_MIN = 1024
 _PORT_MAX = 65535
@@ -31,70 +33,15 @@ _AUTOSTART_DELAY = 1.0
 # Store the CLI handle, only for correct register/unregister.
 _cli_commands: list[object] = []
 
-# This error is shown in the UI & command line when online access isn't enabled.
-#
-# NOTE(@ideasman42): we could consider `localhost` to be acceptable, this is a grey area
-# regarding what counts as "online" or not.
-_state_offline_error_message = "Online access must be enabled in the system preferences"
-
-
-class _State:
-    """
-    Module-level runtime state that is not persisted across sessions.
-    """
-
-    # Communicate to the user if there is a problem.
-    # Displayed in the preferences UI when non-empty.
-    autostart_error: str = ""
-
-    @classmethod
-    def startup_info_set(cls, error: str) -> None:
-        """
-        Store a startup error message to display in the preferences UI.
-        """
-        cls.autostart_error = error
-
-    @classmethod
-    def startup_info_set_from_exception(cls, ex: Exception) -> None:
-        """
-        Store a startup exception message to display in the preferences UI
-        and print the full traceback to stderr for debugging.
-        """
-        # NOTE: this is correct but reads like an unhandled exception.
-        # import traceback
-        # traceback.print_exception(ex)
-        cls.autostart_error = str(ex)
-
-    @classmethod
-    def startup_info_clear(cls) -> None:
-        """
-        Clear any startup error so it no longer appears in the preferences UI.
-        """
-        cls.autostart_error = ""
-
-    @classmethod
-    def startup_online_ok_or_error(cls) -> bool:
-        """
-        Return True when online access is permitted, otherwise store an error and return False.
-        """
-        if bpy.app.online_access:
-            return True
-        cls.startup_info_set(_state_offline_error_message)
-        if bpy.app.background:
-            print("Error: {:s}".format(_state_offline_error_message))
-            print("  Use --online-mode to enable online access from the command line")
-        return False
-
-
 class _BlenderMCPPreferences(bpy.types.AddonPreferences):  # type: ignore[misc]
     bl_idname = __package__
 
     host: StringProperty(  # type: ignore[valid-type]
-        name="Host",
+        name="Default Host",
         default=mcp_to_blender_server.DEFAULT_HOST,
     )
     port: IntProperty(  # type: ignore[valid-type]
-        name="Port",
+        name="Default Port",
         default=mcp_to_blender_server.DEFAULT_PORT,
         min=_PORT_MIN,
         max=_PORT_MAX,
@@ -102,8 +49,8 @@ class _BlenderMCPPreferences(bpy.types.AddonPreferences):  # type: ignore[misc]
     use_autostart: BoolProperty(  # type: ignore[valid-type]
         name="Auto Start",
         description=(
-            "Automatically start the MCP bridge server when Blender starts.\n"
-            "Without this, you must manually start from the preferences UI.\n"
+            "Allow automatic startup for saved projects that enable Auto Start This Project.\n"
+            "New and unsaved projects always start stopped.\n"
             "(ignored in background mode)"
         ),
         default=True,
@@ -184,8 +131,8 @@ class _BlenderMCPPreferences(bpy.types.AddonPreferences):  # type: ignore[misc]
     )
 
     def draw(self, context: bpy.types.Context) -> None:
-        del context
         layout = self.layout
+        layout.label(text="Defaults for projects without MCP settings")
         layout.prop(self, "host")
         layout.prop(self, "port")
         layout.prop(self, "use_autostart")
@@ -195,15 +142,8 @@ class _BlenderMCPPreferences(bpy.types.AddonPreferences):  # type: ignore[misc]
         layout.prop(self, "timer_interval_idle_delay")
         layout.prop(self, "use_log")
 
-        if mcp_to_blender_server.is_running():
-            layout.operator("blmcp.server_stop", icon="CANCEL")
-            layout.label(text="Server is running", icon="CHECKMARK")
-        else:
-            layout.operator("blmcp.server_start", icon="PLAY")
-            layout.label(text="Server is stopped", icon="X")
-
-        if _State.autostart_error:
-            layout.label(text=_State.autostart_error, icon="ERROR")
+        layout.separator()
+        _draw_project_settings(layout, context)
 
 
 class _BLMCP_OT_server_start(bpy.types.Operator):  # type: ignore[misc]
@@ -212,36 +152,15 @@ class _BLMCP_OT_server_start(bpy.types.Operator):  # type: ignore[misc]
     bl_description = "Start the MCP socket bridge server that the MCP server can connect to"
 
     def execute(self, context: bpy.types.Context) -> set[str]:
-        from . import execute_interactive
-
-        # Timers do not fire in background mode. Use the CLI command instead:
-        # `blender --background file.blend --command blender_mcp`.
-        if bpy.app.background:
-            self.report({"ERROR"}, "Use `--command blender_mcp` to start the MCP bridge server in background mode")
-            return {"CANCELLED"}
-        if not _State.startup_online_ok_or_error():
-            self.report({"ERROR"}, _state_offline_error_message)
-            return {"CANCELLED"}
-        # Clear any stale auto-start error so it does not persist in the UI.
-        _State.startup_info_clear()
-        prefs = context.preferences.addons[__package__].preferences
-        mcp_to_blender_server.timer_internal_vars_calc(
-            active=prefs.timer_interval_active,
-            idle=prefs.timer_interval_idle,
-            idle_delay=prefs.timer_interval_idle_delay,
-        )
-        mcp_to_blender_server.use_log = prefs.use_log
+        del context
         try:
-            mcp_to_blender_server.start(prefs.host, prefs.port)
+            project_settings.start_server()
         except Exception as ex:  # pylint: disable=broad-exception-caught
-            _State.startup_info_set_from_exception(ex)
+            project_settings.session().error = str(ex)
             self.report({"ERROR"}, str(ex))
             return {"CANCELLED"}
-        bpy.app.timers.register(
-            execute_interactive.run,
-            first_interval=mcp_to_blender_server.TIMER_INTERVAL_ACTIVE,
-            persistent=True)
-        self.report({"INFO"}, "MCP server started on {:s}:{:d}".format(prefs.host, prefs.port))
+        endpoint = project_settings.session().endpoint
+        self.report({"INFO"}, "MCP bridge started at {!s}".format(endpoint))
         return {"FINISHED"}
 
 
@@ -252,59 +171,95 @@ class _BLMCP_OT_server_stop(bpy.types.Operator):  # type: ignore[misc]
 
     def execute(self, context: bpy.types.Context) -> set[str]:
         del context
-        from . import execute_interactive
-
-        # Clear any stale auto-start error so it does not persist in the UI.
-        _State.startup_info_clear()
-        mcp_to_blender_server.stop()
-        if bpy.app.timers.is_registered(execute_interactive.run):
-            bpy.app.timers.unregister(execute_interactive.run)
+        project_settings.stop_server()
+        if not project_settings.session().conflict:
+            project_settings.session().error = ""
         self.report({"INFO"}, "MCP bridge server stopped")
         return {"FINISHED"}
 
 
-def _autostart_timer() -> None:
-    """
-    Deferred timer callback that starts the server when ``use_autostart``
-    is enabled. Runs after a delay to avoid slowing down Blender's startup.
-    """
-    from . import execute_interactive
+class _BLMCP_OT_apply_project_settings(bpy.types.Operator):  # type: ignore[misc]
+    bl_idname = "blmcp.apply_project_settings"
+    bl_label = "Apply Settings to Project"
+    bl_description = "Resolve conflicting scene settings using the values shown in this panel"
 
-    if not _State.startup_online_ok_or_error():
+    def execute(self, context: bpy.types.Context) -> set[str]:
+        del context
+        try:
+            project_settings.apply_settings()
+        except (ValueError, RuntimeError) as ex:
+            project_settings.session().error = str(ex)
+            self.report({'ERROR'}, str(ex))
+            return {'CANCELLED'}
+        return {'FINISHED'}
+
+
+class _BLMCP_OT_copy_connection_settings(bpy.types.Operator):  # type: ignore[misc]
+    bl_idname = "blmcp.copy_connection_settings"
+    bl_label = "Copy Connection Settings"
+    bl_description = "Copy BLENDER_MCP_HOST and BLENDER_MCP_PORT for the MCP server process"
+
+    def execute(self, context: bpy.types.Context) -> set[str]:
+        context.window_manager.clipboard = project_settings.connection_settings()
+        self.report({'INFO'}, "Copied bridge environment variables")
+        return {'FINISHED'}
+
+
+def _draw_project_settings(layout: bpy.types.UILayout, context: bpy.types.Context) -> None:
+    state = project_settings.session()
+    if not state.initialized:
+        layout.label(text="Loading project settings...")
         return
-    prefs = bpy.context.preferences.addons[__package__].preferences
-    mcp_to_blender_server.timer_internal_vars_calc(
-        active=prefs.timer_interval_active,
-        idle=prefs.timer_interval_idle,
-        idle_delay=prefs.timer_interval_idle_delay,
-    )
-    mcp_to_blender_server.use_log = prefs.use_log
+    running = mcp_to_blender_server.is_running()
+    status = "Running" if running else ("Error" if state.error else "Stopped")
+    layout.label(text=status, icon='CHECKMARK' if running else ('ERROR' if state.error else 'PAUSE'))
+    layout.label(text=bpy.path.basename(bpy.data.filepath) if bpy.data.filepath else "Unsaved project", icon='FILE_BLEND')
+    if bpy.data.filepath:
+        for line in textwrap.wrap(bpy.data.filepath, width=max(16, int((context.region.width - 70) / 7)),
+                                  break_on_hyphens=False):
+            layout.label(text=line)
+    ui = context.window_manager.blmcp_session_settings
+    endpoint_fields = layout.column()
+    endpoint_fields.enabled = not running
+    endpoint_fields.prop(ui, "host")
+    endpoint_fields.prop(ui, "port")
+    if running:
+        layout.label(text="Stop the bridge to change its port")
+    layout.prop(ui, "use_autostart")
+    if state.endpoint:
+        layout.label(text="Listening: {:s}:{:d}".format(*state.endpoint))
+    if state.error:
+        box = layout.box()
+        box.alert = True
+        for line in textwrap.wrap(state.error, width=max(24, int(context.region.width / 7) - 3)):
+            box.label(text=line)
+    if state.conflict:
+        layout.operator("blmcp.apply_project_settings", icon='CHECKMARK')
+    row = layout.row()
+    row.enabled = running or not state.conflict
+    row.operator("blmcp.server_stop" if running else "blmcp.server_start", icon='CANCEL' if running else 'PLAY')
+    layout.operator("blmcp.copy_connection_settings", icon='COPYDOWN')
+    if not bpy.data.filepath or bpy.data.is_dirty:
+        layout.label(text="Save the .blend to keep project settings", icon='INFO')
 
-    # This isn't expected:
-    # - Maybe the operator is explicitly called as part of an automated action.
-    # - The user might have set a very long delay for initial startup and
-    #   manually enabled before the timer fires.
-    # Whatever the case, running multiple servers would cause confusing errors, so don't do it.
-    if mcp_to_blender_server.is_running():
-        return
 
-    try:
-        mcp_to_blender_server.start(prefs.host, prefs.port)
-    except Exception as ex:  # pylint: disable=broad-exception-caught
-        _State.startup_info_set_from_exception(ex)
-        return
+class _BLMCP_PT_project(bpy.types.Panel):  # type: ignore[misc]
+    bl_label = "MCP Project Ports"
+    bl_idname = "BLMCP_PT_project"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = "MCP"
 
-    bpy.app.timers.register(
-        execute_interactive.run,
-        first_interval=mcp_to_blender_server.TIMER_INTERVAL_ACTIVE,
-        persistent=True)
+    def draw(self, context: bpy.types.Context) -> None:
+        _draw_project_settings(self.layout, context)
 
 
 def _cli_execute_handler(argv: list[str]) -> int:
     """
     Callback for the CLI: ``blender -c blender_mcp``.
     """
-    if not _State.startup_online_ok_or_error():
+    if not bpy.app.online_access:
+        print("Online access must be enabled; use --online-mode")
         return 1
     from .cli import cli_execute
     return cli_execute(argv)
@@ -314,6 +269,9 @@ _classes = (
     _BlenderMCPPreferences,
     _BLMCP_OT_server_start,
     _BLMCP_OT_server_stop,
+    _BLMCP_OT_apply_project_settings,
+    _BLMCP_OT_copy_connection_settings,
+    _BLMCP_PT_project,
 )
 
 
@@ -321,33 +279,14 @@ def register() -> None:
     for cls in _classes:
         bpy.utils.register_class(cls)
     _cli_commands.append(bpy.utils.register_cli_command("blender_mcp", _cli_execute_handler))
-
-    # Defer auto-start so the server does not slow down Blender's startup.
-    if not bpy.app.background:
-        if not _State.startup_online_ok_or_error():
-            return
-
-        prefs = bpy.context.preferences.addons[__package__].preferences
-        if prefs.use_autostart:
-            bpy.app.timers.register(
-                _autostart_timer,
-                first_interval=prefs.autostart_delay,
-                persistent=True,
-            )
+    project_settings.register()
 
 
 def unregister() -> None:
-    from . import execute_interactive
-
+    project_settings.unregister()
     for cmd in _cli_commands:
         bpy.utils.unregister_cli_command(cmd)
     _cli_commands.clear()
 
-    if bpy.app.timers.is_registered(_autostart_timer):
-        bpy.app.timers.unregister(_autostart_timer)
-
-    mcp_to_blender_server.stop()
-    if bpy.app.timers.is_registered(execute_interactive.run):
-        bpy.app.timers.unregister(execute_interactive.run)
     for cls in reversed(_classes):
         bpy.utils.unregister_class(cls)

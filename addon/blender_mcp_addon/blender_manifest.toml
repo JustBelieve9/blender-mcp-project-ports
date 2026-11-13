@@ -1,12 +1,12 @@
 schema_version = "1.0.0"
 
 id = "mcp"
-version = "1.0.0"
-name = "MCP"
-tagline = "MCP server add-on for LLM interaction"
-maintainer = "Blender Lab"
+version = "1.1.0"
+name = "MCP Project Ports"
+tagline = "Blender Lab MCP with per-project ports in the sidebar"
+maintainer = "JustBelieve9 (fork of Blender Lab MCP)"
 type = "add-on"
-website = "https://www.blender.org/lab/mcp-server/"
+website = "https://github.com/JustBelieve9/blender-mcp-project-ports"
 blender_version_min = "5.1.0"
 
 license = [

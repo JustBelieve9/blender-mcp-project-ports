@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "blender_project_a": {
+      "command": "C:/path/to/blender-mcp-project-ports/.venv/Scripts/blender-mcp.exe",
+      "args": [],
+      "env": {
+        "BLENDER_MCP_HOST": "127.0.0.1",
+        "BLENDER_MCP_PORT": "9876"
+      }
+    }
+  }
+}

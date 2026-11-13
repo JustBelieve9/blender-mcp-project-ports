@@ -666,7 +666,12 @@ def start(host: str, port: int) -> None:
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if sys.platform == "win32":
+            # Windows SO_REUSEADDR lets two Blender processes share one endpoint.
+            # Exclusive ownership is required for reliable project routing.
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        else:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.setblocking(False)
         sock.bind((host, port))
         sock.listen(_LISTEN_BACKLOG)
