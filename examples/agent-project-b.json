@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "blender_project_b": {
-      "command": "C:/path/to/blender-mcp-project-ports/.venv/Scripts/blender-mcp.exe",
+      "command": "C:/path/to/blender-lab-mcp-addon-zhb-mod/.venv/Scripts/blender-mcp.exe",
       "args": [],
       "env": {
         "BLENDER_MCP_HOST": "127.0.0.1",

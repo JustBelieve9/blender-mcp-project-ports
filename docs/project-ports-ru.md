@@ -44,7 +44,7 @@ uv venv .venv
 uv pip install --python .venv/Scripts/python.exe -e ./mcp
 ```
 
-В конфигурациях из `examples/` замени `C:/path/to/blender-mcp-project-ports` на абсолютный путь к своей копии.
+В конфигурациях из `examples/` замени `C:/path/to/blender-lab-mcp-addon-zhb-mod` на абсолютный путь к своей копии.
 Агенту A дай конфиг `agent-project-a.json`, агенту B — `agent-project-b.json`.
 Каждый содержит единственное назначенное подключение; просто добавить два сервера в общий список недостаточно для изоляции агентов.
 Формат `mcpServers` поддерживают многие клиенты, но конкретному приложению может требоваться другой синтаксис.

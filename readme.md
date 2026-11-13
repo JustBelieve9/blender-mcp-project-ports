@@ -1,8 +1,9 @@
-# MCP Project Ports
+# Blender Lab MCP Addon (zhb mod)
 
 A fork of the [official Blender Lab MCP](https://projects.blender.org/lab/blender_mcp),
 based on commit `dbbf836ad4b1025f14a2b3b504c43903f39e0b04`.
 This is an independent modification by JustBelieve9, not an official Blender Lab release.
+In Blender, the extension is listed as **MCP Project Ports**.
 
 ## Project ports (add-on 1.1.0)
 
@@ -13,7 +14,7 @@ This is an independent modification by JustBelieve9, not an official Blender Lab
 - Report port conflicts instead of silently routing to another instance.
 - Use exclusive TCP binding on Windows to prevent two projects sharing one listener endpoint.
 
-Download the add-on ZIP from [Releases](https://github.com/JustBelieve9/blender-mcp-project-ports/releases).
+Download the add-on ZIP from [Releases](https://github.com/JustBelieve9/blender-lab-mcp-addon-zhb-mod/releases).
 Blender 5.1+ is required; tested on Windows with Blender 5.2.2 LTS.
 
 **[Installation and two-agent setup (Russian)](docs/project-ports-ru.md)**

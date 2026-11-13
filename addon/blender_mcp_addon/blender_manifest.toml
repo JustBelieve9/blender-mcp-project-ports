@@ -6,7 +6,7 @@ name = "MCP Project Ports"
 tagline = "Blender Lab MCP with per-project ports in the sidebar"
 maintainer = "JustBelieve9 (fork of Blender Lab MCP)"
 type = "add-on"
-website = "https://github.com/JustBelieve9/blender-mcp-project-ports"
+website = "https://github.com/JustBelieve9/blender-lab-mcp-addon-zhb-mod"
 blender_version_min = "5.1.0"
 
 license = [
